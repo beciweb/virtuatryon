@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Augmented Virtual Try-On Eyeglasses</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        #webcam {
+            width: 100%;
+            height: 500px;
+            border: 1px solid #ddd;
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .eyeglass {
+            position: absolute;
+            cursor: pointer;
+            user-drag: none;
+            user-select: none;
+        }
+        .styled-button {
+            display: inline-block;
+            padding: 5px 15px;
+            background-color: darkgreen;
+            color: white;
+            text-decoration: none;
+            font-size: 16px;
+            border-radius: 5px;
+            text-align: center;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        .styled-button:hover {
+            background-color: green;
+            color: darkblue;
+        }
+
+        .container {
+            padding: 20px;
+        }
+
+        .eyeglasses-preview {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        .eyeglass-item {
+            cursor: pointer;
+        }
+
+        /* Make the design responsive */
+        @media (max-width: 768px) {
+            #webcam {
+                height: 400px;
+            }
+            .styled-button {
+                font-size: 14px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-center mb-4">Augmented Reality Eyeglasses Try-On</h1>
+        <h4 style="text-align:center">After selecting your eyeglasses model, drag and drop the image in the webcam</h4>
+
+        <!-- Webcam and eyeglasses area -->
+        <div id="webcam" class="mb-4" ondrop="drop(event)" ondragover="allowDrop(event)">
+            <video id="videoElement" width="100%" height="100%" autoplay></video>
+            <img id="eyeglassesImg" class="eyeglass" src="" alt="Eyeglasses" draggable="true" ondragstart="drag(event)" style="display:none;">
+        </div>
+
+        <!-- Buttons for webcam control -->
+        <div class="text-center">
+            <button id="startBtn" class="btn btn-primary">Start Webcam</button>
+            <button id="stopBtn" class="btn btn-danger" style="display: none;">Stop Webcam</button>
+            <a href="https://form.jotform.com/242313439681356" class="styled-button">Order Online</a>
+            <button id="previewBtn" class="btn btn-secondary">Eyeglasses List Preview</button>
+        </div>
+
+        <!-- Eyeglass Select Box -->
+        <div class="text-center mt-3">
+            <label for="eyeglassSelect" class="form-label">Select Eyeglasses</label>
+            <select id="eyeglassSelect" class="form-select" onchange="changeEyeglass(this)">
+                <option value="">Choose Eyeglasses</option>
+            </select>
+        </div>
+
+        <!-- Modal for Eyeglasses Preview -->
+        <div class="modal fade" id="eyeglassesModal" tabindex="-1" aria-labelledby="eyeglassesModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="eyeglassesModalLabel">Eyeglasses List</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body" id="modalBody">
+                        <!-- Eyeglasses images and names will appear here -->
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Hidden Canvas for Image Download -->
+        <canvas id="previewCanvas" width="640" height="480"></canvas>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // JavaScript to handle webcam and eyeglasses
+        let videoElement = document.getElementById('videoElement');
+        let eyeglassesImg = document.getElementById('eyeglassesImg');
+        let startBtn = document.getElementById('startBtn');
+        let stopBtn = document.getElementById('stopBtn');
+        let previewBtn = document.getElementById('previewBtn');
+        let eyeglassesPreview = document.getElementById('modalBody');
+        let previewCanvas = document.getElementById('previewCanvas');
+        let ctx = previewCanvas.getContext('2d');
+        let currentEyeglass = null;
+        let isWebcamRunning = false;
+
+        // List of eyeglasses models with their images, brand names, and prices
+        let eyeglassesList = [
+            { src: 'images/marchezimen.png', brand: 'Marchezi Men', price: '$120' },
+            { src: 'images/Aviator.png', brand: 'Aviator', price: '$140' },
+            { src: 'images/rayban1.png', brand: 'Rayban', price: '$150' },
+            { src: 'images/rayban2.png', brand: 'Rayban Men', price: '$160' },
+            { src: 'images/oakleymen.png', brand: 'Oakley Men', price: '$170' },
+            { src: 'images/oakleysport.png', brand: 'Oakley Sport', price: '$200' },
+        ];
+
+        // Start Webcam
+        function startWebcam() {
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                navigator.mediaDevices.getUserMedia({ video: true })
+                    .then(function(stream) {
+                        videoElement.srcObject = stream;
+                        isWebcamRunning = true;
+                        startBtn.style.display = 'none';
+                        stopBtn.style.display = 'inline-block';
+                    })
+                    .catch(function(error) {
+                        alert("Webcam access denied");
+                    });
+            }
+        }
+
+        // Stop Webcam
+        function stopWebcam() {
+            let stream = videoElement.srcObject;
+            let tracks = stream.getTracks();
+            tracks.forEach(track => track.stop());
+            videoElement.srcObject = null;
+            isWebcamRunning = false;
+            startBtn.style.display = 'inline-block';
+            stopBtn.style.display = 'none';
+        }
+
+        // Populate Select Box with Eyeglasses Options
+        function populateEyeglassSelect() {
+            let selectBox = document.getElementById('eyeglassSelect');
+            
+            eyeglassesList.forEach((item, index) => {
+                let option = document.createElement('option');
+                option.value = index;
+                option.textContent = `${item.brand} - ${item.price}`;
+                selectBox.appendChild(option);
+            });
+        }
+
+        // Change Eyeglass via Select Box
+        function changeEyeglass(selectElement) {
+            let selectedIndex = selectElement.value;
+            if (selectedIndex !== "") {
+                let selectedEyeglass = eyeglassesList[selectedIndex];
+                selectEyeglasses(selectedEyeglass.src, selectedEyeglass.brand, selectedEyeglass.price);
+            }
+        }
+
+        // Select Eyeglasses and Display on Webcam
+        function selectEyeglasses(src, brand, price) {
+            currentEyeglass = { src, brand, price };
+            eyeglassesImg.src = src;
+            eyeglassesImg.style.display = 'inline-block';
+
+            // Adjust size based on webcam size
+            let webcamWidth = videoElement.clientWidth;
+            let scaleFactor = webcamWidth / 5; // Scale the eyeglass image
+
+            eyeglassesImg.width = scaleFactor; // Adjust width
+            eyeglassesImg.height = (eyeglassesImg.naturalHeight / eyeglassesImg.naturalWidth) * scaleFactor; // Adjust height proportionally
+        }
+
+        // Show Eyeglasses Preview in Modal
+        function showEyeglassesPreview() {
+            eyeglassesPreview.innerHTML = ''; // Clear previous content
+            eyeglassesList.forEach(item => {
+                let div = document.createElement('div');
+                div.className = 'eyeglass-item';
+                div.style.margin = '10px';
+
+                let img = document.createElement('img');
+                img.src = item.src;
+                img.alt = item.brand;
+                img.className = 'img-thumbnail';
+                img.style.width = '150px'; // Adjust the size as needed
+                img.style.cursor = 'pointer';
+                img.onclick = function() {
+                    selectEyeglasses(item.src, item.brand, item.price);
+                    var myModal = new bootstrap.Modal(document.getElementById('eyeglassesModal'));
+                    myModal.hide();
+                };
+
+                let p = document.createElement('p');
+                p.textContent = `${item.brand} - ${item.price}`;
+
+                div.appendChild(img);
+                div.appendChild(p);
+                eyeglassesPreview.appendChild(div);
+            });
+        }
+
+        // Allow Drop
+        function allowDrop(event) {
+            event.preventDefault();
+        }
+
+        // Dragging Image
+        function drag(event) {
+            event.dataTransfer.setData("imageSrc", event.target.src);
+        }
+
+        // Drop the Eyeglass Image
+        function drop(event) {
+            event.preventDefault();
+
+            let data = event.dataTransfer.getData("imageSrc");
+
+            // Get the mouse position relative to the webcam container
+            let rect = videoElement.getBoundingClientRect();
+            let x = event.clientX - rect.left;
+            let y = event.clientY - rect.top;
+
+            // Set the image source and position
+            eyeglassesImg.src = data;
+            eyeglassesImg.style.position = 'absolute';
+            eyeglassesImg.style.left = `${x - eyeglassesImg.width / 2}px`;
+            eyeglassesImg.style.top = `${y - eyeglassesImg.height / 2}px`;
+            eyeglassesImg.style.display = 'inline-block';
+        }
+
+        // Event Listeners
+        startBtn.addEventListener('click', startWebcam);
+        stopBtn.addEventListener('click', stopWebcam);
+        previewBtn.addEventListener('click', showEyeglassesPreview);
+
+        // Initialize the Select Box
+        populateEyeglassSelect();
+    </script>
+</body>
+</html>
+
+
+
